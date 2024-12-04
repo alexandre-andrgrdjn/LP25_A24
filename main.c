@@ -16,7 +16,7 @@ void perform_backup(const char *source_dir, const char *backup_dir) {
     list_files(source_dir);
 
     // 2. Processus de déduplication et stockage dans le répertoire de sauvegarde
-    // Par exemple, appeler la fonction deduplicate_file pour chaque fichier trouvé.
+
     
     printf("Sauvegarde terminée.\n");
 }

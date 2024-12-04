@@ -3,12 +3,15 @@
 #include <string.h>
 #include <fcntl.h>
 #include <dirent.h>
+#include <sys/stat.h>
 #include "file_handler.h"
 #include "deduplication.h"
 
-// Fonction permettant de lire un élément du fichier .backup_log
+#define MD5_DIGEST_LENGTH 16
+
+// Lit le fichier .backup_log et charge les entrées dans une structure chaînée
 log_t read_backup_log(const char *logfile) {
-    log_t logs = { NULL, NULL };
+    log_t logs = {NULL, NULL};
     FILE *file = fopen(logfile, "r");
     if (file == NULL) {
         perror("Erreur d'ouverture du fichier .backup_log");
@@ -19,14 +22,31 @@ log_t read_backup_log(const char *logfile) {
     char date[100];
     unsigned char md5[MD5_DIGEST_LENGTH];
 
-    while (fscanf(file, "%s %s ", path, date) == 2) {
+    // Lecture des entrées du fichier log
+    while (fscanf(file, "%1023s %99s", path, date) == 2) {
         if (fread(md5, 1, MD5_DIGEST_LENGTH, file) != MD5_DIGEST_LENGTH) {
+            fprintf(stderr, "Erreur lors de la lecture du MD5\n");
             break;
         }
         log_element *elt = malloc(sizeof(log_element));
+        if (elt == NULL) {
+            perror("Erreur d'allocation mémoire");
+            break;
+        }
         elt->path = strdup(path);
+        if (elt->path == NULL) {
+            perror("Erreur d'allocation mémoire pour le chemin");
+            free(elt);
+            break;
+        }
         memcpy(elt->md5, md5, MD5_DIGEST_LENGTH);
         elt->date = strdup(date);
+        if (elt->date == NULL) {
+            perror("Erreur d'allocation mémoire pour la date");
+            free(elt->path);
+            free(elt);
+            break;
+        }
         elt->next = logs.head;
         if (logs.head != NULL) {
             logs.head->prev = elt;
@@ -40,8 +60,13 @@ log_t read_backup_log(const char *logfile) {
     return logs;
 }
 
-// Fonction permettant de mettre à jour une ligne du fichier .backup_log
+// Met à jour le fichier .backup_log avec les données d'une liste chaînée
 void update_backup_log(const char *logfile, log_t *logs) {
+    if (logs == NULL || logfile == NULL) {
+        fprintf(stderr, "Logs ou chemin du fichier invalide\n");
+        return;
+    }
+
     FILE *file = fopen(logfile, "w");
     if (file == NULL) {
         perror("Erreur d'ouverture du fichier .backup_log");
@@ -56,15 +81,26 @@ void update_backup_log(const char *logfile, log_t *logs) {
     fclose(file);
 }
 
-// Fonction pour écrire un élément log de la liste chaînée log_element dans le fichier .backup_log
+// Écrit un élément de log dans le fichier
 void write_log_element(log_element *elt, FILE *logfile) {
+    if (elt == NULL || logfile == NULL) {
+        fprintf(stderr, "Element ou fichier invalide pour l'écriture\n");
+        return;
+    }
     fprintf(logfile, "%s %s ", elt->path, elt->date);
-    fwrite(elt->md5, 1, MD5_DIGEST_LENGTH, logfile);
+    if (fwrite(elt->md5, 1, MD5_DIGEST_LENGTH, logfile) != MD5_DIGEST_LENGTH) {
+        perror("Erreur lors de l'écriture du MD5");
+    }
     fprintf(logfile, "\n");
 }
 
-// Fonction permettant de lister les fichiers présents dans un répertoire
+// Liste les fichiers dans un répertoire en utilisant stat pour vérifier le type
 void list_files(const char *path) {
+    if (path == NULL) {
+        fprintf(stderr, "Chemin invalide\n");
+        return;
+    }
+
     DIR *dir = opendir(path);
     if (dir == NULL) {
         perror("Erreur d'ouverture du répertoire");
@@ -72,11 +108,18 @@ void list_files(const char *path) {
     }
 
     struct dirent *entry;
+    char full_path[1024];
+    struct stat st;
+
     while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_type == DT_REG) {
+        snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
+        if (stat(full_path, &st) == -1) {
+            perror("Erreur lors de l'accès aux informations du fichier");
+            continue;
+        }
+        if (S_ISREG(st.st_mode)) {
             printf("Fichier: %s\n", entry->d_name);
         }
     }
     closedir(dir);
 }
-

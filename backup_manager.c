@@ -5,11 +5,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CHUNK_SIZE 4096
-#define BACKUP_DIR "./backup"
-#define RESTORE_DIR "./restore"
+#define CHUNK_SIZE 4096 ///< Taille des chunks (blocs) de données en octets
+#define BACKUP_DIR "./backup" ///< Répertoire pour stocker les fichiers de sauvegarde
+#define RESTORE_DIR "./restore" ///< Répertoire pour restaurer les fichiers
 
-// Fonction permettant d'enregistrer dans fichier le tableau de chunk dédupliqué
+/**
+ * @brief Enregistre un tableau de chunks dédupliqués dans un fichier de sauvegarde.
+ *
+ * @param output_filename Nom du fichier de sortie.
+ * @param chunks Tableau contenant les chunks dédupliqués.
+ * @param chunk_count Nombre total de chunks dans le tableau.
+ */
 void write_backup_file(const char *output_filename, Chunk *chunks, int chunk_count) {
     FILE *output_file = fopen(output_filename, "wb");
     if (output_file == NULL) {
@@ -17,15 +23,22 @@ void write_backup_file(const char *output_filename, Chunk *chunks, int chunk_cou
         return;
     }
 
-    // Écrire chaque chunk dans le fichier
+    // Écrit chaque chunk dans le fichier de sauvegarde
     for (int i = 0; i < chunk_count; i++) {
-        fwrite(chunks[i].data, 1, CHUNK_SIZE, output_file);
+        fwrite(chunks[i].data, 1, CHUNK_SIZE, output_file); // Écriture des données d'un chunk
     }
 
     fclose(output_file);
 }
 
-// Fonction implémentant la logique pour la sauvegarde d'un fichier
+/**
+ * @brief Sauvegarde un fichier en utilisant la déduplication.
+ *
+ * Cette fonction divise le fichier en chunks, applique la déduplication pour 
+ * éviter de sauvegarder des données redondantes, puis écrit le résultat dans un fichier de sauvegarde.
+ *
+ * @param filename Nom du fichier à sauvegarder.
+ */
 void backup_file(const char *filename) {
     FILE *file = fopen(filename, "rb");
     if (file == NULL) {
@@ -33,20 +46,25 @@ void backup_file(const char *filename) {
         return;
     }
 
-    // Table de hachage pour les chunks
-    Chunk chunks[1000];
-    Md5Entry hash_table[HASH_TABLE_SIZE] = {0};  // Table de hachage vide
-    int chunk_count = 0;
+    Chunk chunks[1000]; ///< Tableau de stockage des chunks
+    Md5Entry hash_table[HASH_TABLE_SIZE] = {0}; ///< Table de hachage pour détecter les doublons
+    int chunk_count = 0; ///< Nombre total de chunks traités
 
-    // Dédupliquer le fichier
+    // Appelle la fonction de déduplication pour remplir le tableau `chunks`
     deduplicate_file(file, chunks, hash_table);
     fclose(file);
 
-    // Écrire les chunks dédupliqués dans un fichier de sauvegarde
+    // Sauvegarde les chunks dédupliqués dans un fichier
     write_backup_file("backup_data.sav", chunks, chunk_count);
 }
 
-// Fonction permettant la restauration du fichier backup via le tableau de chunk
+/**
+ * @brief Restaure un fichier à partir d'un tableau de chunks dédupliqués.
+ *
+ * @param output_filename Nom du fichier de sortie restauré.
+ * @param chunks Tableau contenant les chunks restaurés.
+ * @param chunk_count Nombre total de chunks dans le tableau.
+ */
 void write_restored_file(const char *output_filename, Chunk *chunks, int chunk_count) {
     FILE *output_file = fopen(output_filename, "wb");
     if (output_file == NULL) {
@@ -54,15 +72,23 @@ void write_restored_file(const char *output_filename, Chunk *chunks, int chunk_c
         return;
     }
 
-    // Écrire chaque chunk dans le fichier restauré
+    // Écrit chaque chunk dans le fichier restauré
     for (int i = 0; i < chunk_count; i++) {
-        fwrite(chunks[i].data, 1, CHUNK_SIZE, output_file);
+        fwrite(chunks[i].data, 1, CHUNK_SIZE, output_file); // Écriture séquentielle des chunks
     }
 
     fclose(output_file);
 }
 
-// Fonction pour restaurer une sauvegarde
+/**
+ * @brief Restaure une sauvegarde en lisant les chunks depuis un fichier de sauvegarde.
+ *
+ * Cette fonction lit les chunks sauvegardés, puis les restaure sous forme de fichiers 
+ * individuels dans le répertoire spécifié.
+ *
+ * @param backup_id Chemin vers le fichier de sauvegarde.
+ * @param restore_dir Répertoire où les fichiers restaurés seront écrits.
+ */
 void restore_backup(const char *backup_id, const char *restore_dir) {
     FILE *backup_file = fopen(backup_id, "rb");
     if (backup_file == NULL) {
@@ -70,13 +96,13 @@ void restore_backup(const char *backup_id, const char *restore_dir) {
         return;
     }
 
-    // Tableau pour stocker les chunks
-    Chunk chunks[1000]; // Supposons que nous connaissons la taille max
-    int chunk_count = 0;
+    Chunk chunks[1000]; ///< Tableau temporaire pour stocker les chunks
+    int chunk_count = 0; ///< Nombre de chunks lus/restaurés
 
-    // Lire les chunks du fichier de sauvegarde et les restaurer
-    unsigned char buffer[CHUNK_SIZE];
+    unsigned char buffer[CHUNK_SIZE]; ///< Tampon pour lire les données chunk par chunk
     size_t bytes_read;
+
+    // Boucle de lecture des chunks depuis le fichier de sauvegarde
     while ((bytes_read = fread(buffer, 1, CHUNK_SIZE, backup_file)) > 0) {
         char restored_file_path[256];
         snprintf(restored_file_path, sizeof(restored_file_path), "%s/restored_file_%d", restore_dir, chunk_count);
@@ -84,16 +110,17 @@ void restore_backup(const char *backup_id, const char *restore_dir) {
         FILE *restored_file = fopen(restored_file_path, "wb");
         if (restored_file == NULL) {
             perror("Erreur d'ouverture du fichier restauré");
-            continue;
+            continue; // Ignore ce chunk si l'ouverture échoue
         }
 
-        fwrite(buffer, 1, bytes_read, restored_file);
+        fwrite(buffer, 1, bytes_read, restored_file); // Écrit le chunk dans le fichier
         fclose(restored_file);
         chunk_count++;
     }
 
     fclose(backup_file);
 }
+
 
 // Point d'entrée principal pour effectuer la sauvegarde ou la restauration
 int main(int argc, char *argv[]) {
